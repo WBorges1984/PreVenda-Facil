@@ -3,16 +3,18 @@ unit uPedidoController;
 interface
 
 uses
-  Horse, System.JSON, System.SysUtils, uPedidoRepository;
+  Horse, System.JSON, System.SysUtils, uPedidoRepository,
+  uConexaoDBF, FireDAC.Comp.Client, Data.DB; // Adicionado aqui para o banco!
 
 type
   TPedidoController = class
   public
     class procedure RegistrarRotas;
     class procedure ReceberPedido(Req: THorseRequest; Res: THorseResponse);
-
-    // 1. A declaração da função que vai listar os produtos
     class procedure ListarProdutos(Req: THorseRequest; Res: THorseResponse);
+
+    // A declaração que estava faltando:
+    class procedure FazerLogin(Req: THorseRequest; Res: THorseResponse);
   end;
 
 implementation
@@ -21,11 +23,58 @@ implementation
 
 class procedure TPedidoController.RegistrarRotas;
 begin
-  // Mapeia a rota POST para gravar pedido
   THorse.Post('/pedidos', ReceberPedido);
-
-  // Mapeia a rota GET para listar produtos
   THorse.Get('/produtos', ListarProdutos);
+  THorse.Post('/login', FazerLogin);
+end;
+
+class procedure TPedidoController.FazerLogin(Req: THorseRequest; Res: THorseResponse);
+var
+  JSONBody, JSONRetorno: TJSONObject;
+  Usuario, SenhaDigitada, SenhaBanco: string;
+  DBF: TConexaoDBF;
+  Qry: TFDQuery;
+begin
+  JSONBody := Req.Body<TJSONObject>;
+  Usuario := JSONBody.GetValue<string>('usuario').ToUpper;
+  SenhaDigitada := JSONBody.GetValue<string>('senha');
+
+  JSONRetorno := TJSONObject.Create;
+  DBF := TConexaoDBF.Create;
+  try
+    // Aqui você faria o SELECT na tabela USUARIO
+    // Lembre-se que o ADS precisa da senha de criptografia antes, se houver!
+    Qry := DBF.AbrirTabela('USUARIO', 'NM_USUARIO, CD_SENHA', 'NM_USUARIO = ' + QuotedStr(Usuario), '');
+    try
+      if Qry.IsEmpty then
+      begin
+        JSONRetorno.AddPair('status', 'erro');
+        JSONRetorno.AddPair('mensagem', 'Usuário não encontrado!');
+        Res.Status(THTTPStatus.Unauthorized).Send(JSONRetorno);
+      end
+      else
+      begin
+        SenhaBanco := Qry.FieldByName('CD_SENHA').AsString.Trim;
+
+        if SenhaDigitada = SenhaBanco then
+        begin
+          JSONRetorno.AddPair('status', 'ok');
+          JSONRetorno.AddPair('mensagem', 'Login aprovado!');
+          Res.Status(THTTPStatus.OK).Send(JSONRetorno);
+        end
+        else
+        begin
+          JSONRetorno.AddPair('status', 'erro');
+          JSONRetorno.AddPair('mensagem', 'Senha incorreta!');
+          Res.Status(THTTPStatus.Unauthorized).Send(JSONRetorno);
+        end;
+      end;
+    finally
+      Qry.Free;
+    end;
+  finally
+    DBF.Free;
+  end;
 end;
 
 class procedure TPedidoController.ListarProdutos(Req: THorseRequest; Res: THorseResponse);
@@ -34,7 +83,6 @@ var
 begin
   Repositorio := TPedidoRepository.Create;
   try
-    // 2. A implementação que chama o banco e devolve o JSON
     Res.Status(THTTPStatus.OK).Send(Repositorio.ListarProdutos);
   finally
     Repositorio.Free;

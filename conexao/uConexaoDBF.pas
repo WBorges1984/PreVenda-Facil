@@ -111,7 +111,10 @@ begin
   FConexao.Params.Add('ShowDeleted=False');
   FConexao.Params.Add('ReadOnly=false');
   FConexao.Params.Add('CharacterSet=ANSI');
+  FConexao.Params.Add('User_Name=admin');
+  FConexao.Params.Add('Password=slqempf@cil');
   FConexao.Connected := True;
+
 end;
 
 function TConexaoDBF.AbrirTabela(const ANomeTabela, ACampos, ACondicao,
