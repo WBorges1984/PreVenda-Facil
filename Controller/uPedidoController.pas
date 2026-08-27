@@ -79,13 +79,52 @@ end;
 
 class procedure TPedidoController.ListarProdutos(Req: THorseRequest; Res: THorseResponse);
 var
-  Repositorio: TPedidoRepository;
+  DBF: TConexaoDBF;
+  Qry: TFDQuery;
+  JSONRetorno: TJSONArray;
+  JSONProduto: TJSONObject;
+  TermoBusca, Condicao: string;
 begin
-  Repositorio := TPedidoRepository.Create;
   try
-    Res.Status(THTTPStatus.OK).Send(Repositorio.ListarProdutos);
-  finally
-    Repositorio.Free;
+    // 1. Forma SEGURA de pegar o parâmetro. Se vier vazio, não dá erro 500!
+    if not Req.Query.TryGetValue('busca', TermoBusca) then
+      TermoBusca := '';
+
+    JSONRetorno := TJSONArray.Create;
+    DBF := TConexaoDBF.Create;
+    try
+      Condicao := '';
+      if TermoBusca <> '' then
+        Condicao := 'DS_PRODUTO LIKE ' + QuotedStr('%' + TermoBusca.ToUpper + '%');
+
+      // 2. ATENÇÃO: Confirme se os campos abaixo existem com esses exatos nomes no seu DBF!
+      Qry := DBF.AbrirTabela('"PRODUTO.dbf"', 'CD_PRODUTO, DS_PRODUTO, CD_UNIDADE, VL_PRODUTO', Condicao, 'DS_PRODUTO');
+      try
+        while not Qry.Eof do
+        begin
+          JSONProduto := TJSONObject.Create;
+          JSONProduto.AddPair('codigo', Qry.FieldByName('CD_PRODUTO').AsString.Trim);
+          JSONProduto.AddPair('descricao', Qry.FieldByName('DS_PRODUTO').AsString.Trim);
+          JSONProduto.AddPair('unidade', Qry.FieldByName('CD_UNIDADE').AsString.Trim);
+          JSONProduto.AddPair('preco', TJSONNumber.Create(Qry.FieldByName('VL_PRODUTO').AsFloat));
+
+          JSONRetorno.AddElement(JSONProduto);
+          Qry.Next;
+        end;
+
+        Res.Status(THTTPStatus.OK).Send(JSONRetorno);
+      finally
+        Qry.Free;
+      end;
+    finally
+      DBF.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      // 3. SE DER ERRO, DEVOLVE A MENSAGEM REAL PARA O APLICATIVO!
+      Res.Status(THTTPStatus.InternalServerError).Send('Erro no banco de dados: ' + E.Message);
+    end;
   end;
 end;
 
